@@ -1,0 +1,589 @@
+---
+#==============================================================#
+# File      :   pigsty-supabase-ha-full.yml
+# Desc      :   Pigsty 4-node HA Config with Supabase Integration
+# Mtime     :   2026-02-14
+# Docs      :   https://pigsty.io/docs/conf/full
+#              https://pigsty.io/docs/app/supabase
+# License   :   Apache-2.0 @ https://pigsty.io/docs/about/license/
+# Copyright :   2018-2026  Ruohang Feng / Vonng (rh@vonng.com)
+#==============================================================#
+# IMPORTANT: This merges ha/full (4-node) with Supabase
+# CRITICAL: Change all passwords and JWT secrets before deployment!
+#
+# Deployment Steps:
+#   1. Update all IP addresses (10.10.10.10-13) to match your nodes
+#   2. Change ALL passwords (search for 'CHANGE THIS')
+#   3. Generate new JWT_SECRET (32+ chars) and regenerate ANON_KEY/SERVICE_ROLE_KEY
+#   4. Update domains (supa.pigsty -> your actual domain)
+#   5. ./deploy.yml  # Install Pigsty, PostgreSQL HA, MinIO
+#   6. ./docker.yml  # Install Docker
+#   7. ./app.yml  # Launch Supabase containers
+#==============================================================#
+all:
+  #==============================================================#
+  # Clusters, Nodes, and Modules
+  #==============================================================#
+  children:
+    #----------------------------------------------#
+    # INFRA : https://pigsty.io/docs/infra
+    #----------------------------------------------#
+    infra:
+      hosts:
+        10.10.10.10: { infra_seq: 1 } # <--- UPDATE THIS IP
+      vars:
+        docker_enabled: true
+        # docker_registry_mirrors: ["https://docker.1panel.live","https://docker.1ms.run","https://docker.xuanyuan.me","https://registry-1.docker.io"]
+        repo_extra_packages:
+          [
+            pg18-main,
+            pg18-time,
+            pg18-gis,
+            pg18-fts,
+            pg18-sec,
+            pg18-feat,
+            pg18-util,
+            pg18-admin,
+            pg18-stat,
+            postgresql-18-timescaledb-tsl,
+          ]
+        # TimescaleDB TSL, GIS and FTS packages
+        # Uncomment to install all extension packages:
+        # repo_extra_packages: [pg18-main, pg18-time, pg18-gis, pg18-rag, pg18-fts, pg18-olap, pg18-feat, pg18-lang, pg18-type, pg18-util, pg18-func, pg18-admin, pg18-stat, pg18-sec, pg18-fdw, pg18-sim, pg18-etl]
+
+        # Supabase App Configuration
+        app: supabase
+        apps:
+          supabase:
+            conf:
+              # ========================================
+              # CRITICAL: CHANGE THESE CREDENTIALS!
+              # ========================================
+
+              # JWT Configuration - MUST CHANGE!
+              JWT_SECRET: v1snFR6rPS7rEPZdvuLASrobc1wkeTJcaUbpnxSyPDQ= # <--- CHANGE THIS!
+              # After changing JWT_SECRET, regenerate these keys using: https://supabase.com/docs/guides/self-hosting/docker#securing-your-services
+              ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsImlhdCI6MTc3MTAyNzIwMCwiZXhwIjoyMDg2NTYwMDAwLCJyb2xlIjoiYW5vbiJ9.ds5txzuHH2s84k_Ki8twETlpYV43n5lS9GVxnJ-P8bc # <--- REGENERATE THIS!
+              SERVICE_ROLE_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsImlhdCI6MTc3MTAyNzIwMCwiZXhwIjoyMDg2NTYwMDAwLCJyb2xlIjoic2VydmljZV9yb2xlIn0.2OK5xD0bYXpNZxQyoPWlgDbXxB4C9y7jWqUJZjTC31E # <--- REGENERATE THIS!
+              JWT_EXPIRY: 3600
+              # Encryption Keys
+              PG_META_CRYPTO_KEY: v1snFR6rPS7rEPZdvuLASrobc1wkeTJcaUbpnxSyPDQ= # <--- CHANGE THIS!
+              # Dashboard Credentials
+              DASHBOARD_USERNAME: supabase
+              DASHBOARD_PASSWORD: abhigyan # <--- CHANGE THIS!
+              # Logflare Tokens (32-64 random characters)
+              LOGFLARE_PUBLIC_ACCESS_TOKEN: v1snFR6rPS7rEPZdvuLASrobc1wkeTJcaUbpnxSyPDQ= # <--- CHANGE THIS!
+              LOGFLARE_PRIVATE_ACCESS_TOKEN: v1snFR6rPS7rEPZdvuLASrobc1wkeTJcaUbpnxSyPDQ= # <--- CHANGE THIS!
+              # PostgreSQL Connection - IMPORTANT FOR HA!
+              # Option 1: Direct to primary (single point of failure)
+              POSTGRES_HOST: 10.10.10.10 # <--- UPDATE THIS IP
+              # Option 2: Use VIP for HA (recommended for production)
+              # POSTGRES_HOST: 10.10.10.2  # VIP address from pg_vip_address
+              # Option 3: Use cluster DNS name (if configured)
+              # POSTGRES_HOST: pg-meta
+              POSTGRES_PORT: 5436 # Use 'default' service port (auto-routes to primary)
+              # POSTGRES_PORT: 5432  # Or use direct primary port
+              POSTGRES_DB: meta
+              POSTGRES_PASSWORD: abhigyan # <--- CHANGE THIS! Must match pg_users password below
+              # Domain Configuration - CHANGE THESE!
+              SITE_URL: https://supa.pigsty # <--- CHANGE to your domain!
+              API_EXTERNAL_URL: https://supa.pigsty # <--- CHANGE to your domain!
+              SUPABASE_PUBLIC_URL: https://supa.pigsty # <--- CHANGE to your domain!
+              # MinIO/S3 Configuration
+              S3_ENDPOINT: https://sss.pigsty:9000
+              S3_ACCESS_KEY: abhigyan # <--- CHANGE THIS! Must match minio_users below
+              S3_SECRET_KEY: abhigyan # <--- CHANGE THIS! Must match minio_secret_key below
+              MINIO_DOMAIN_IP: 10.10.10.10 # <--- UPDATE THIS IP
+    #----------------------------------------------#
+    # ETCD : HA Cluster for PostgreSQL DCS
+    #----------------------------------------------#
+    etcd:
+      hosts:
+        10.10.10.10: { etcd_seq: 1 } # <--- UPDATE THESE IPs
+        10.10.10.11: { etcd_seq: 2 } # <--- FOR YOUR ENVIRONMENT
+        10.10.10.12: { etcd_seq: 3 } # <--- 3-NODE CONSENSUS
+      vars:
+        etcd_cluster: etcd
+    #----------------------------------------------#
+    # MINIO : Object Storage for Supabase
+    #----------------------------------------------#
+    minio:
+      hosts:
+        10.10.10.10: { minio_seq: 1 } # <--- UPDATE THIS IP
+        # For multi-node MinIO HA, add more nodes here
+        # 10.10.10.11: { minio_seq: 2 }
+        # 10.10.10.12: { minio_seq: 3 }
+      vars:
+        minio_cluster: minio
+        minio_users:
+          - { access_key: pgbackrest, secret_key: abhigyan, policy: pgsql } # <--- CHANGE THIS!
+          - { access_key: s3user_meta, secret_key: abhigyan, policy: meta } # <--- CHANGE THIS!
+          - { access_key: s3user_data, secret_key: abhigyan, policy: data } # <--- CHANGE THIS!
+    #----------------------------------------------#
+    # PG-META : PostgreSQL Cluster with Supabase
+    #----------------------------------------------#
+    pg-meta:
+      hosts:
+        10.10.10.10: { pg_seq: 1, pg_role: primary } # <--- UPDATE THESE IPs
+        10.10.10.11: { pg_seq: 2, pg_role: replica } # <--- FOR YOUR 3-NODE
+        10.10.10.12: { pg_seq: 3, pg_role: replica } # <--- HA CLUSTER
+        10.10.10.13: { pg_seq: 4, pg_role: replica } # <--- FOR YOUR 3-NODE
+        10.10.10.14: { pg_seq: 5, pg_role: replica } # <--- HA CLUSTER
+      vars:
+        pg_cluster: pg-meta
+        # Supabase Required Users - CRITICAL!
+        pg_users:
+          # Original meta users (keep these)
+          - {
+              name: dbuser_meta,
+              password: abhigyan,
+              pgbouncer: true,
+              roles: [dbrole_admin],
+              comment: pigsty admin user,
+            } # <--- CHANGE THIS!
+          - {
+              name: dbuser_view,
+              password: abhigyan,
+              pgbouncer: true,
+              roles: [dbrole_readonly],
+              comment: read-only viewer for meta database,
+            } # <--- CHANGE THIS!
+          # Supabase Role Definitions (no login)
+          - { name: anon, login: false }
+          - { name: authenticated, login: false }
+          - {
+              name: dashboard_user,
+              login: false,
+              replication: true,
+              createdb: true,
+              createrole: true,
+            }
+          - { name: service_role, login: false, bypassrls: true }
+          - {
+              name: supabase_admin,
+              password: abhigyan,
+              pgbouncer: true,
+              inherit: true,
+              superuser: true,
+              replication: true,
+              createdb: true,
+              createrole: true,
+              bypassrls: true,
+            } # <--- CHANGE THIS!
+          - {
+              name: authenticator,
+              password: abhigyan,
+              pgbouncer: true,
+              inherit: false,
+              roles: [authenticated, anon, service_role],
+            } # <--- SAME PASSWORD!
+          - {
+              name: supabase_auth_admin,
+              password: abhigyan,
+              pgbouncer: true,
+              inherit: false,
+              createrole: true,
+            } # <--- SAME PASSWORD!
+          - {
+              name: supabase_storage_admin,
+              password: abhigyan,
+              pgbouncer: true,
+              inherit: false,
+              createrole: true,
+            } # <--- SAME PASSWORD!
+          - {
+              name: supabase_functions_admin,
+              password: abhigyan,
+              pgbouncer: true,
+              inherit: false,
+              createrole: true,
+            } # <--- SAME PASSWORD!
+          - {
+              name: supabase_replication_admin,
+              password: abhigyan,
+              replication: true,
+            } # <--- SAME PASSWORD!
+          - {
+              name: supabase_etl_admin,
+              password: abhigyan,
+              replication: true,
+              roles: [pg_read_all_data],
+            } # <--- SAME PASSWORD!
+          - {
+              name: supabase_read_only_user,
+              password: abhigyan,
+              bypassrls: true,
+              roles: [dbrole_readonly, pg_read_all_data],
+            } # <--- SAME PASSWORD!
+        # Supabase Databases
+        pg_databases:
+          # Original meta database (keep this)
+          - name: meta
+            baseline: cmdb.sql
+            comment: pigsty meta database with PostGIS and Full-Text Search
+            schemas: [pigsty]
+            extensions:
+              - { name: postgis }
+              - { name: vector }
+              - { name: pg_trgm }
+              - { name: unaccent }
+              - { name: fuzzystrmatch }
+          # Supabase Main Database - CRITICAL!
+          - name: postgres
+            baseline: supabase.sql # This file must exist in ~/pigsty/files/
+            owner: supabase_admin
+            comment: supabase postgres database with PostGIS and Full-Text Search
+            schemas:
+              - extensions
+              - auth
+              - realtime
+              - storage
+              - graphql_public
+              - supabase_functions
+              - _analytics
+              - _realtime
+            extensions:
+              # Core Supabase Extensions
+              - { name: pgcrypto, schema: extensions }
+              - { name: pg_net, schema: extensions }
+              - { name: pgjwt, schema: extensions }
+              - { name: uuid-ossp, schema: extensions }
+              - { name: pgsodium }
+              - { name: supabase_vault }
+              - { name: pg_graphql }
+              - { name: pg_jsonschema }
+              - { name: wrappers }
+              - { name: http }
+              - { name: pg_tle }
+              - { name: vector }
+              - { name: pgmq }
+              # PostGIS Extensions - Geospatial Support
+              - { name: postgis, schema: extensions }
+              - { name: postgis_topology, schema: extensions }
+              - { name: postgis_raster, schema: extensions }
+              - { name: postgis_sfcgal, schema: extensions }
+              - { name: pg_trgm, schema: extensions } # Trigram-based fuzzy/similarity search
+              - { name: unaccent, schema: extensions } # Accent-insensitive search
+              - { name: fuzzystrmatch, schema: extensions } # Fuzzy string matching (soundex, levenshtein)
+          # Supabase Analytics Database (Optional)
+          - name: supabase
+            owner: supabase_admin
+            comment: supabase analytics database
+            schemas: [extensions, _analytics]
+        # Supabase Required Extensions and Libraries
+        pg_libs:
+          timescaledb, pgsodium, plpgsql, plpgsql_check, pg_cron, pg_net, pg_stat_statements,
+          auto_explain, pg_wait_sampling, pg_tle, plan_filter
+        # Supabase Required PostgreSQL Parameters
+        pg_parameters:
+          cron.database_name: postgres
+          pgsodium.enable_event_trigger: off # Important workaround!
+        # Supabase HBA Rules - Allow Docker Network Access
+        pg_hba_rules:
+          - {
+              user: all,
+              db: all,
+              addr: intra,
+              auth: pwd,
+              title: everyone intranet
+                access with password,
+              order: 800,
+            }
+          - {
+              user: all,
+              db: postgres,
+              addr: intra,
+              auth: pwd,
+              title: allow supabase
+                access from intranet,
+            }
+          - {
+              user: all,
+              db: postgres,
+              addr: 172.17.0.0/16,
+              auth: pwd,
+              title: allow
+                access from local docker network,
+            }
+        # Cron Jobs - INCLUDING SUPABASE ANALYTICS KICK!
+        pg_crontab: [00 01 * * * postgres /pg/bin/pg-backup full]
+        node_crontab:
+          - 00 01 * * 1 postgres /pg/bin/pg-backup full
+          - 00 01 * * 2,3,4,5,6,7 postgres /pg/bin/pg-backup
+          - "* * * * * postgres /pg/bin/supa-kick" # Kick supabase analytics lag per minute
+        # L2 VIP for HA Access (RECOMMENDED FOR PRODUCTION)
+        pg_vip_enabled: true
+        pg_vip_address: 10.10.10.2/24 # <--- UPDATE THIS VIP
+        pg_vip_interface: eth1 # <--- UPDATE interface name if needed
+    #----------------------------------------------#
+    # PG-TEST : Example 3-Node PostgreSQL HA Cluster
+    #----------------------------------------------#
+    pg-test:
+      hosts:
+        10.10.10.11: { pg_seq: 1, pg_role: primary } # <--- UPDATE THESE IPs
+        10.10.10.12: { pg_seq: 2, pg_role: replica } # <--- FOR YOUR
+        10.10.10.13: { pg_seq: 3, pg_role: replica, pg_offline_query: true } # <--- ENVIRONMENT
+        10.10.10.14: { pg_seq: 4, pg_role: replica, pg_offline_query: true } # <--- ENVIRONMENT
+        10.10.10.15: { pg_seq: 5, pg_role: replica, pg_offline_query: true } # <--- ENVIRONMENT
+      vars:
+        pg_cluster: pg-test
+        pg_users:
+          - {
+              name: test,
+              password: test,
+              pgbouncer: true,
+              roles: [dbrole_admin],
+            } # <--- CHANGE THIS!
+        pg_databases:
+          - { name: test }
+        pg_vip_enabled: true
+        pg_vip_address: 10.10.10.3/24 # <--- UPDATE THIS VIP
+        pg_vip_interface: eth1
+        pg_crontab:
+          - 00 01 * * 1 /pg/bin/pg-backup full
+          - 00 01 * * 2,3,4,5,6,7 /pg/bin/pg-backup
+    #----------------------------------------------#
+    # REDIS : Example Redis Clusters (Optional)
+    #----------------------------------------------#
+    redis-ms:
+      hosts:
+        10.10.10.10: {
+            redis_node: 1,
+            redis_instances: { 6379: {}, 6380: { replica_of: 10.10.10.10
+                      6379 } },
+          } # <--- UPDATE THIS IP
+      vars:
+        redis_cluster: redis-ms
+        redis_password: abhigyan # <--- CHANGE THIS!
+        redis_max_memory: 64MB
+    redis-meta:
+      hosts:
+        10.10.10.11: {
+            redis_node: 1,
+            redis_instances: { 26379: {}, 26380: {}, 26381: {} },
+          } # <--- UPDATE THIS IP
+      vars:
+        redis_cluster: redis-meta
+        redis_password: abhigyan # <--- CHANGE THIS!
+        redis_mode: sentinel
+        redis_max_memory: 16MB
+        redis_sentinel_monitor:
+          - {
+              name: redis-ms,
+              host: 10.10.10.10,
+              port: 6379,
+              password: abhigyan,
+              quorum: 2,
+            } # <--- UPDATE IP & PASSWORD
+    redis-test:
+      hosts:
+        10.10.10.12: {
+            redis_node: 1,
+            redis_instances: { 6379: {}, 6380: {}, 6381: {} },
+          } # <--- UPDATE THESE IPs
+        10.10.10.13:
+          { redis_node: 2, redis_instances: { 6379: {}, 6380: {}, 6381: {} } }
+        10.10.10.14:
+          { redis_node: 2, redis_instances: { 6379: {}, 6380: {}, 6381: {} } }
+        10.10.10.15:
+          { redis_node: 2, redis_instances: { 6379: {}, 6380: {}, 6381: {} } }
+      vars:
+        redis_cluster: redis-test
+        redis_password: abhigyan # <--- CHANGE THIS!
+        redis_mode: cluster
+        redis_max_memory: 32MB
+  #==============================================================#
+  # Global Parameters
+  #==============================================================#
+  vars:
+    version: v4.1.0
+    admin_ip: 10.10.10.10 # <--- UPDATE THIS IP
+    region: default
+    node_tune: oltp
+    pg_conf: oltp.yml
+    node_repo_remove: true # <--- ADD THIS
+    node_repo_modules: local,pgsql,infra # <--- ADD THIS (ensures pgdg always present)
+    #----------------------------------------------#
+    # PROXY : Network Configuration
+    #----------------------------------------------#
+    proxy_env:
+      no_proxy: localhost,127.0.0.1,10.0.0.0/8,192.168.0.0/16,*.pigsty,*.aliyun.com,mirrors.*,*.myqcloud.com,*.tsinghua.edu.cn
+      # http_proxy: http://user:pass@proxy.xxx.com  # <--- Set if needed
+      # https_proxy: http://user:pass@proxy.xxx.com  # <--- Set if needed
+      # all_proxy: http://user:pass@proxy.xxx.com  # <--- Set if needed
+    #----------------------------------------------#
+    # PORTAL : Nginx Reverse Proxy & Domains
+    #----------------------------------------------#
+    infra_portal:
+      home: { domain: i.pigsty } # <--- CHANGE to your domain
+      minio: {
+          domain: m.pigsty,
+          endpoint: "${admin_ip}:9001",
+          scheme: https,
+          websocket: true,
+        } # <--- CHANGE domain
+      supa: # <--- SUPABASE PORTAL CONFIGURATION
+        domain: supa.pigsty # <--- CHANGE to your domain! CRITICAL!
+        endpoint: 10.10.10.10:8000 # <--- UPDATE IP if needed
+        websocket: true
+        certbot: supa.pigsty # <--- CHANGE to your domain for SSL cert
+    #----------------------------------------------#
+    # DNS : Static Host Resolution
+    #----------------------------------------------#
+    node_etc_hosts:
+      - ${admin_ip} i.pigsty sss.pigsty supa.pigsty m.pigsty # <--- Add your domains here
+    #----------------------------------------------#
+    # BACKUP : MinIO Configuration
+    #----------------------------------------------#
+    pgbackrest_method: minio
+    pgbackrest_repo:
+      local:
+        path: /pg/backup
+        retention_full_type: count
+        retention_full: 2
+      minio:
+        type: s3
+        s3_endpoint: sss.pigsty
+        s3_region: us-east-1
+        s3_bucket: pgsql
+        s3_key: pgbackrest
+        s3_key_secret: abhigyan # <--- CHANGE THIS! Must match minio_users
+        s3_uri_style: path
+        path: /pgbackrest
+        storage_port: 9000
+        storage_ca_file: /etc/pki/ca.crt
+        block: y
+        bundle: y
+        bundle_limit: 20MiB
+        bundle_size: 128MiB
+        cipher_type: aes-256-cbc
+        cipher_pass: abhigyan # <--- CHANGE THIS!
+        retention_full_type: time
+        retention_full: 14
+    #----------------------------------------------#
+    # REPO : Package Repository Configuration
+    #----------------------------------------------#
+    # repo_remove: false
+    # node_repo_remove: false
+    # repo_upstream:
+    #   - name: pigsty-pgsql
+    #     description: Pigsty PgSQL
+    #     module: pgsql
+    #     releases: [24] # Ubuntu 24.04 Noble
+    #     baseurl:
+    #       amd64: https://repo.pigsty.io/apt/pgsql/noble noble main
+    #     gpgcheck: false # trusted=yes
+
+    #   - name: pgdg
+    #     description: PostgreSQL Global Development Group (PGDG)
+    #     module: pgsql
+    #     releases: [24] # Ubuntu 24.04 Noble
+    #     baseurl:
+    #       amd64: http://apt.postgresql.org/pub/repos/apt/ noble-pgdg main
+    #     gpgcheck: false # trusted=yes
+    #     # For signed repos, use:
+    #     # gpgcheck: true
+    #     # gpgkey: https://www.postgresql.org/media/keys/ACCC4CF8.asc
+
+    repo_extra_packages: [
+        pg18-main,
+        pg18-time,
+        pg18-gis,
+        pg18-fts,
+        pg18-sec,
+        pg18-feat,
+        pg18-util,
+        pg18-admin,
+        pg18-stat,
+        pg18-sec,
+        postgresql-18-timescaledb-tsl,
+      ] # TimescaleDB TSL, GIS and FTS packages
+    # Uncomment to install all extension packages:
+    # repo_extra_packages: [pg18-main, pg18-time, pg18-gis, pg18-rag, pg18-fts, pg18-olap, pg18-feat, pg18-lang, pg18-type, pg18-util, pg18-func, pg18-admin, pg18-stat, pg18-sec, pg18-fdw, pg18-sim, pg18-etl]
+
+    #----------------------------------------------#
+    # PGSQL : PostgreSQL Configuration
+    #----------------------------------------------#
+    pg_version: 18
+    pg_packages:
+      - postgresql-${pg_version}
+      - postgresql-client-${pg_version}
+      - postgresql-plpython3-${pg_version}
+      - postgresql-plperl-${pg_version}
+      - postgresql-pltcl-${pg_version}
+      - postgresql-${pg_version}-repack
+      - postgresql-${pg_version}-wal2json
+      - postgresql-${pg_version}-pgvector
+      - postgresql-${pg_version}-timescaledb-tsl # <--- ADD THIS LINE
+      - patroni
+      - python3-etcd
+      - pgbouncer
+      - pgbackrest
+      - pg-exporter
+      - pgbackrest-exporter
+      - vip-manager
+      - postgresql-${pg_version}-plpgsql-check
+      - postgresql-${pg_version}-cron
+      - postgresql-${pg_version}-pg-net
+      - postgresql-${pg_version}-pg-wait-sampling
+      - postgresql-${pg_version}-pg-tle
+      - postgresql-${pg_version}-pg-plan-filter
+    pg_locale: C.UTF-8
+    pg_lc_collate: C.UTF-8
+    pg_lc_ctype: C.UTF-8
+    pg_extensions:
+      [
+        pg18-gis,
+        pg18-feat,
+        pg18-fts,
+        pg18-util,
+        pg18-admin,
+        pg18-stat,
+        pg18-sec,
+      ]
+    # pg_extensions: [pg18-time, pg18-gis, pg18-rag, pg18-fts, pg18-feat, pg18-lang, pg18-type, pg18-util, pg18-func, pg18-admin, pg18-stat, pg18-sec, pg18-fdw, pg18-sim, pg18-etl, pg18-olap]
+
+    #----------------------------------------------#
+    # HTTPS : SSL Certificate Configuration
+    #----------------------------------------------#
+    # Uncomment these for production HTTPS:
+    # certbot_sign: true
+    # certbot_email: your@email.com  # <--- CHANGE THIS!
+
+    #----------------------------------------------#
+    # PASSWORDS : CHANGE ALL OF THESE!
+    #----------------------------------------------#
+    grafana_admin_password: abhigyan # <--- CHANGE THIS!
+    grafana_view_password: abhigyan # <--- CHANGE THIS!
+    pg_admin_password: abhigyan # <--- CHANGE THIS!
+    pg_monitor_password: abhigyan # <--- CHANGE THIS!
+    pg_replication_password: abhigyan # <--- CHANGE THIS!
+    patroni_password: abhigyan # <--- CHANGE THIS!
+    haproxy_admin_password: abhigyan # <--- CHANGE THIS!
+    minio_secret_key: abhigyan # <--- CHANGE THIS! Must match S3_SECRET_KEY
+    etcd_root_password: abhigyan # <--- CHANGE THIS!
+#==============================================================#
+# END OF CONFIGURATION
+#==============================================================#
+#
+# NEXT STEPS CHECKLIST:
+#
+# [ ] 1. Update all IP addresses (search for '10.10.10.')
+# [ ] 2. Change ALL passwords (search for 'CHANGE THIS')
+# [ ] 3. Generate new JWT_SECRET (32+ random characters)
+# [ ] 4. Regenerate ANON_KEY and SERVICE_ROLE_KEY using new JWT_SECRET
+#        Tool: https://supabase.com/docs/guides/self-hosting/docker#api-keys
+# [ ] 5. Update all domains (search for '.pigsty')
+# [ ] 6. Ensure supabase.sql baseline file exists in ~/pigsty/files/
+# [ ] 7. Review and adjust VIP addresses if using L2 VIP
+# [ ] 8. Review network interface names (eth1 might be different)
+# [ ] 9. For production: Enable certbot and set certbot_email
+# [ ] 10. Deploy: ./deploy.yml && ./docker.yml && ./app.yml
+#
+# ACCESS AFTER DEPLOYMENT:
+# - Supabase Studio: https://supa.pigsty (or your domain)
+#   Username: supabase, Password: pigsty (from DASHBOARD_PASSWORD)
+# - PostgreSQL Direct: psql postgres://supabase_admin:DBUser.Supa@10.10.10.10:5432/postgres
+# - Grafana: https://i.pigsty (admin / grafana_admin_password)
+#
+#==============================================================#
