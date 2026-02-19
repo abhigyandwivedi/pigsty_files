@@ -1,7 +1,7 @@
 ---
 #==============================================================#
 # File      :   pigsty-supabase-ha-full.yml
-# Desc      :   Pigsty 4-node HA Config with Supabase Integration
+# Desc      :   Pigsty 6-node HA Config with Supabase Integration
 # Mtime     :   2026-02-14
 # Docs      :   https://pigsty.io/docs/conf/full
 #              https://pigsty.io/docs/app/supabase
@@ -12,8 +12,8 @@
 # CRITICAL: Change all passwords and JWT secrets before deployment!
 #
 # Deployment Steps:
-#   1. Update all IP addresses (10.10.10.10-13) to match your nodes
-#   2. Change ALL passwords (search for 'CHANGE THIS')
+#   1. Update all IP addresses (10.10.10.10-16) to match your nodes
+#   2. Change ALL passwords (search for 'abhigyan')
 #   3. Generate new JWT_SECRET (32+ chars) and regenerate ANON_KEY/SERVICE_ROLE_KEY
 #   4. Update domains (supa.pigsty -> your actual domain)
 #   5. ./deploy.yml  # Install Pigsty, PostgreSQL HA, MinIO
