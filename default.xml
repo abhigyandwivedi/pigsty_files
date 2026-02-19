@@ -1,0 +1,25 @@
+<network connections='1'>
+  <name>default</name>
+  <uuid>cc6e269e-63e6-4145-b442-6233d43d987b</uuid>
+  <forward mode='nat'>
+    <nat>
+      <port start='1024' end='65535'/>
+    </nat>
+  </forward>
+  <bridge name='virbr0' stp='off' delay='0'/>
+  <mac address='52:54:00:94:9c:dd'/>
+  <ip address='10.0.0.1' netmask='255.255.255.0'>
+    <dhcp>
+      <range start='10.0.0.2' end='10.0.0.254'/>
+      <host mac='52:54:00:1d:bf:c5' name='omarchy' ip='10.0.0.201'/>
+      <host mac='52:54:00:02:8d:b0' name='vagrant_meta' ip='10.0.0.151'/>
+      <host mac='52:54:00:e7:2b:ec' name='vagrant_node-1' ip='10.0.0.152'/>
+      <host mac='52:54:00:07:74:ce' name='vagrant_node-2' ip='10.0.0.153'/>
+      <host mac='52:54:00:83:22:1b' name='vagrant_node-3' ip='10.0.0.154'/>
+      <host mac='52:54:00:bc:66:d1' name='vagrant_node-4' ip='10.0.0.155'/>
+      <host mac='52:54:00:4b:25:fb' name='vagrant_node-5' ip='10.0.0.156'/>
+    </dhcp>
+  </ip>
+  <ip family='ipv6' address='fd00::1' prefix='64'>
+  </ip>
+</network>
