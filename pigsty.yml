@@ -1,7 +1,7 @@
 ---
 #==============================================================#
 # File      :   pigsty-supabase-ha-full.yml
-# Desc      :   Pigsty 6-node HA Config with Supabase Integration
+# Desc      :   Pigsty 4-node HA Config with Supabase Integration
 # Mtime     :   2026-02-14
 # Docs      :   https://pigsty.io/docs/conf/full
 #              https://pigsty.io/docs/app/supabase
@@ -12,8 +12,8 @@
 # CRITICAL: Change all passwords and JWT secrets before deployment!
 #
 # Deployment Steps:
-#   1. Update all IP addresses (10.10.10.10-16) to match your nodes
-#   2. Change ALL passwords (search for 'abhigyan')
+#   1. Update all IP addresses (10.10.10.10-13) to match your nodes
+#   2. Change ALL passwords (search for 'CHANGE THIS')
 #   3. Generate new JWT_SECRET (32+ chars) and regenerate ANON_KEY/SERVICE_ROLE_KEY
 #   4. Update domains (supa.pigsty -> your actual domain)
 #   5. ./deploy.yml  # Install Pigsty, PostgreSQL HA, MinIO
@@ -76,14 +76,14 @@ all:
               LOGFLARE_PRIVATE_ACCESS_TOKEN: v1snFR6rPS7rEPZdvuLASrobc1wkeTJcaUbpnxSyPDQ= # <--- CHANGE THIS!
               # PostgreSQL Connection - IMPORTANT FOR HA!
               # Option 1: Direct to primary (single point of failure)
-              POSTGRES_HOST: 10.10.10.10 # <--- UPDATE THIS IP
+              POSTGRES_HOST: 10.10.10.2 # <--- UPDATE THIS IP
               # Option 2: Use VIP for HA (recommended for production)
               # POSTGRES_HOST: 10.10.10.2  # VIP address from pg_vip_address
               # Option 3: Use cluster DNS name (if configured)
               # POSTGRES_HOST: pg-meta
-              POSTGRES_PORT: 5436 # Use 'default' service port (auto-routes to primary)
+              POSTGRES_PORT: 5432 # Use 'default' service port (auto-routes to primary)
               # POSTGRES_PORT: 5432  # Or use direct primary port
-              POSTGRES_DB: meta
+              POSTGRES_DB: postgres
               POSTGRES_PASSWORD: abhigyan # <--- CHANGE THIS! Must match pg_users password below
               # Domain Configuration - CHANGE THESE!
               SITE_URL: https://supa.pigsty # <--- CHANGE to your domain!
@@ -91,9 +91,18 @@ all:
               SUPABASE_PUBLIC_URL: https://supa.pigsty # <--- CHANGE to your domain!
               # MinIO/S3 Configuration
               S3_ENDPOINT: https://sss.pigsty:9000
-              S3_ACCESS_KEY: abhigyan # <--- CHANGE THIS! Must match minio_users below
+              S3_ACCESS_KEY: s3user_data # <--- CHANGE THIS! Must match minio_users below
               S3_SECRET_KEY: abhigyan # <--- CHANGE THIS! Must match minio_secret_key below
               MINIO_DOMAIN_IP: 10.10.10.10 # <--- UPDATE THIS IP
+              GOTRUE_MAILER_AUTOCONFIRM: "true"
+              GOTRUE_SITE_URL: https://supa.pigsty # same as SITE_URL
+              GOTRUE_URI_ALLOW_LIST: "https://supa.pigsty"
+              GOTRUE_DISABLE_SIGNUP: "false"
+              GOTRUE_JWT_SECRET: v1snFR6rPS7rEPZdvuLASrobc1wkeTJcaUbpnxSyPDQ=
+              GOTRUE_JWT_EXP: 3600
+              GOTRUE_DB_DRIVER: postgres
+              GOTRUE_DB_DATABASE_URL: postgres://supabase_auth_admin:abhigyan@10.10.10.2:5432/postgres
+
     #----------------------------------------------#
     # ETCD : HA Cluster for PostgreSQL DCS
     #----------------------------------------------#
@@ -119,18 +128,38 @@ all:
           - { access_key: pgbackrest, secret_key: abhigyan, policy: pgsql } # <--- CHANGE THIS!
           - { access_key: s3user_meta, secret_key: abhigyan, policy: meta } # <--- CHANGE THIS!
           - { access_key: s3user_data, secret_key: abhigyan, policy: data } # <--- CHANGE THIS!
+    pg-shard:
+      hosts:
+        10.10.10.13: { pg_seq: 1, pg_role: primary, pg_group: 1 }
+        10.10.10.14: { pg_seq: 2, pg_role: primary, pg_group: 2 }
+        10.10.10.15: { pg_seq: 3, pg_role: primary, pg_group: 3 }
+      vars:
+        pg_cluster: pg-shard
+        pg_mode: citus
+        pg_shard: pg-meta
+        pg_libs: citus, pg_stat_statements, auto_explain, pg_wait_sampling
+        pg_users:
+          - {
+              name: supabase_admin,
+              password: abhigyan,
+              superuser: true,
+              createdb: true,
+              createrole: true,
+              pgbouncer: true,
+            }
+        pg_databases:
+          - { name: postgres, owner: supabase_admin }
+
     #----------------------------------------------#
     # PG-META : PostgreSQL Cluster with Supabase
     #----------------------------------------------#
+
     pg-meta:
       hosts:
-        10.10.10.10: { pg_seq: 1, pg_role: primary } # <--- UPDATE THESE IPs
-        10.10.10.11: { pg_seq: 2, pg_role: replica } # <--- FOR YOUR 3-NODE
-        10.10.10.12: { pg_seq: 3, pg_role: replica } # <--- HA CLUSTER
-        10.10.10.13: { pg_seq: 4, pg_role: replica } # <--- FOR YOUR 3-NODE
-        10.10.10.14: { pg_seq: 5, pg_role: replica } # <--- HA CLUSTER
+        10.10.10.10: { pg_seq: 1, pg_role: primary }
+        10.10.10.11: { pg_seq: 2, pg_role: replica }
+        10.10.10.12: { pg_seq: 3, pg_role: replica }
       vars:
-        pg_cluster: pg-meta
         # Supabase Required Users - CRITICAL!
         pg_users:
           # Original meta users (keep these)
@@ -183,6 +212,7 @@ all:
               pgbouncer: true,
               inherit: false,
               createrole: true,
+              superuser: true,
             } # <--- SAME PASSWORD!
           - {
               name: supabase_storage_admin,
@@ -190,6 +220,7 @@ all:
               pgbouncer: true,
               inherit: false,
               createrole: true,
+              superuser: true,
             } # <--- SAME PASSWORD!
           - {
               name: supabase_functions_admin,
@@ -197,6 +228,7 @@ all:
               pgbouncer: true,
               inherit: false,
               createrole: true,
+              superuser: true,
             } # <--- SAME PASSWORD!
           - {
               name: supabase_replication_admin,
@@ -242,21 +274,23 @@ all:
               - supabase_functions
               - _analytics
               - _realtime
+              - partman # <-- add this
+              - experiments # <-- optional: dedicated schema for your experiment tables
             extensions:
               # Core Supabase Extensions
               - { name: pgcrypto, schema: extensions }
               - { name: pg_net, schema: extensions }
               - { name: pgjwt, schema: extensions }
-              - { name: uuid-ossp, schema: extensions }
-              - { name: pgsodium }
-              - { name: supabase_vault }
-              - { name: pg_graphql }
-              - { name: pg_jsonschema }
-              - { name: wrappers }
-              - { name: http }
+              - { name: uuid_ossp, schema: extensions }
+              - { name: pgsodium, schema: extensions }
+              - { name: supabase_vault, schema: extensions }
+              - { name: pg_graphql, schema: extensions }
+              - { name: pg_jsonschema, schema: extensions }
+              - { name: wrappers, schema: extensions }
+              - { name: http, schema: extensions }
               - { name: pg_tle }
               - { name: vector }
-              - { name: pgmq }
+              - { name: pgmq, schema: extensions }
               # PostGIS Extensions - Geospatial Support
               - { name: postgis, schema: extensions }
               - { name: postgis_topology, schema: extensions }
@@ -265,6 +299,8 @@ all:
               - { name: pg_trgm, schema: extensions } # Trigram-based fuzzy/similarity search
               - { name: unaccent, schema: extensions } # Accent-insensitive search
               - { name: fuzzystrmatch, schema: extensions } # Fuzzy string matching (soundex, levenshtein)
+              - { name: citus, schema: extensions }
+              - { name: pg_partman, schema: partman }
           # Supabase Analytics Database (Optional)
           - name: supabase
             owner: supabase_admin
@@ -272,12 +308,19 @@ all:
             schemas: [extensions, _analytics]
         # Supabase Required Extensions and Libraries
         pg_libs:
-          timescaledb, pgsodium, plpgsql, plpgsql_check, pg_cron, pg_net, pg_stat_statements,
-          auto_explain, pg_wait_sampling, pg_tle, plan_filter
+          citus, timescaledb, pgsodium, plpgsql, plpgsql_check, pg_cron, pg_net, pg_stat_statements,
+          auto_explain, pg_wait_sampling, pg_tle, plan_filter, pg_partman_bgw
         # Supabase Required PostgreSQL Parameters
         pg_parameters:
           cron.database_name: postgres
           pgsodium.enable_event_trigger: off # Important workaround!
+          citus.shard_count: 12 # default shards per distributed table
+          citus.shard_replication_factor: 1 # set to 2 if you want shard redundancy
+          citus.enable_repartition_joins: on # needed for cross-shard joins in experiments
+          citus.log_distributed_deadlock_detection: on
+          pg_partman_bgw.dbname: postgres
+          pg_partman_bgw.interval: 3600 # run partition maintenance every hour
+          pg_partman_bgw.role: supabase_admin
         # Supabase HBA Rules - Allow Docker Network Access
         pg_hba_rules:
           - {
@@ -285,8 +328,7 @@ all:
               db: all,
               addr: intra,
               auth: pwd,
-              title: everyone intranet
-                access with password,
+              title: "everyone intranet access with password",
               order: 800,
             }
           - {
@@ -294,54 +336,59 @@ all:
               db: postgres,
               addr: intra,
               auth: pwd,
-              title: allow supabase
-                access from intranet,
+              order: 700,
+              title: "allow supabase access from intranet",
             }
           - {
               user: all,
               db: postgres,
               addr: 172.17.0.0/16,
               auth: pwd,
-              title: allow
-                access from local docker network,
+              order: 600,
+              title: "allow access from local docker network",
             }
         # Cron Jobs - INCLUDING SUPABASE ANALYTICS KICK!
-        pg_crontab: [00 01 * * * postgres /pg/bin/pg-backup full]
+        pg_crontab:
+          - "00 01 * * 1 postgres /pg/bin/pg-backup full"
+          - "00 01 * * 2,3,4,5,6,7 postgres /pg/bin/pg-backup"
         node_crontab:
           - 00 01 * * 1 postgres /pg/bin/pg-backup full
           - 00 01 * * 2,3,4,5,6,7 postgres /pg/bin/pg-backup
-          - "* * * * * postgres /pg/bin/supa-kick" # Kick supabase analytics lag per minute
+          # - "* * * * * postgres /pg/bin/supa-kick" # Kick supabase analytics lag per minute
         # L2 VIP for HA Access (RECOMMENDED FOR PRODUCTION)
         pg_vip_enabled: true
         pg_vip_address: 10.10.10.2/24 # <--- UPDATE THIS VIP
         pg_vip_interface: eth1 # <--- UPDATE interface name if needed
+        pg_cluster: pg-meta
+        pg_mode: citus
+        pg_shard: pg-meta
     #----------------------------------------------#
     # PG-TEST : Example 3-Node PostgreSQL HA Cluster
     #----------------------------------------------#
-    pg-test:
-      hosts:
-        10.10.10.11: { pg_seq: 1, pg_role: primary } # <--- UPDATE THESE IPs
-        10.10.10.12: { pg_seq: 2, pg_role: replica } # <--- FOR YOUR
-        10.10.10.13: { pg_seq: 3, pg_role: replica, pg_offline_query: true } # <--- ENVIRONMENT
-        10.10.10.14: { pg_seq: 4, pg_role: replica, pg_offline_query: true } # <--- ENVIRONMENT
-        10.10.10.15: { pg_seq: 5, pg_role: replica, pg_offline_query: true } # <--- ENVIRONMENT
-      vars:
-        pg_cluster: pg-test
-        pg_users:
-          - {
-              name: test,
-              password: test,
-              pgbouncer: true,
-              roles: [dbrole_admin],
-            } # <--- CHANGE THIS!
-        pg_databases:
-          - { name: test }
-        pg_vip_enabled: true
-        pg_vip_address: 10.10.10.3/24 # <--- UPDATE THIS VIP
-        pg_vip_interface: eth1
-        pg_crontab:
-          - 00 01 * * 1 /pg/bin/pg-backup full
-          - 00 01 * * 2,3,4,5,6,7 /pg/bin/pg-backup
+    # pg-test:
+    #   hosts:
+    #     10.10.10.11: { pg_seq: 1, pg_role: primary } # <--- UPDATE THESE IPs
+    #     10.10.10.12: { pg_seq: 2, pg_role: replica } # <--- FOR YOUR
+    #     10.10.10.13: { pg_seq: 3, pg_role: replica, pg_offline_query: true } # <--- ENVIRONMENT
+    #     10.10.10.14: { pg_seq: 4, pg_role: replica, pg_offline_query: true } # <--- ENVIRONMENT
+    #     10.10.10.15: { pg_seq: 5, pg_role: replica, pg_offline_query: true } # <--- ENVIRONMENT
+    #   vars:
+    #     pg_cluster: pg-test
+    #     pg_users:
+    #       - {
+    #           name: test,
+    #           password: test,
+    #           pgbouncer: true,
+    #           roles: [dbrole_admin],
+    #         } # <--- CHANGE THIS!
+    #     pg_databases:
+    #       - { name: test }
+    #     pg_vip_enabled: true
+    #     pg_vip_address: 10.10.10.3/24 # <--- UPDATE THIS VIP
+    #     pg_vip_interface: eth1
+    #     pg_crontab:
+    #       - 00 01 * * 1 /pg/bin/pg-backup full
+    #       - 00 01 * * 2,3,4,5,6,7 /pg/bin/pg-backup
     #----------------------------------------------#
     # REDIS : Example Redis Clusters (Optional)
     #----------------------------------------------#
@@ -349,8 +396,8 @@ all:
       hosts:
         10.10.10.10: {
             redis_node: 1,
-            redis_instances: { 6379: {}, 6380: { replica_of: 10.10.10.10
-                      6379 } },
+            redis_instances:
+              { 6379: {}, 6380: { replica_of: "10.10.10.10:6379" } },
           } # <--- UPDATE THIS IP
       vars:
         redis_cluster: redis-ms
@@ -373,25 +420,25 @@ all:
               host: 10.10.10.10,
               port: 6379,
               password: abhigyan,
-              quorum: 2,
+              quorum: 1,
             } # <--- UPDATE IP & PASSWORD
-    redis-test:
-      hosts:
-        10.10.10.12: {
-            redis_node: 1,
-            redis_instances: { 6379: {}, 6380: {}, 6381: {} },
-          } # <--- UPDATE THESE IPs
-        10.10.10.13:
-          { redis_node: 2, redis_instances: { 6379: {}, 6380: {}, 6381: {} } }
-        10.10.10.14:
-          { redis_node: 2, redis_instances: { 6379: {}, 6380: {}, 6381: {} } }
-        10.10.10.15:
-          { redis_node: 2, redis_instances: { 6379: {}, 6380: {}, 6381: {} } }
-      vars:
-        redis_cluster: redis-test
-        redis_password: abhigyan # <--- CHANGE THIS!
-        redis_mode: cluster
-        redis_max_memory: 32MB
+    # redis-test:
+    #   hosts:
+    #     10.10.10.12: {
+    #         redis_node: 1,
+    #         redis_instances: { 6379: {}, 6380: {}, 6381: {} },
+    #       } # <--- UPDATE THESE IPs
+    #     10.10.10.13:
+    #       { redis_node: 2, redis_instances: { 6379: {}, 6380: {}, 6381: {} } }
+    #     10.10.10.14:
+    #       { redis_node: 2, redis_instances: { 6379: {}, 6380: {}, 6381: {} } }
+    #     10.10.10.15:
+    #       { redis_node: 2, redis_instances: { 6379: {}, 6380: {}, 6381: {} } }
+    #   vars:
+    #     redis_cluster: redis-test
+    #     redis_password: abhigyan # <--- CHANGE THIS!
+    #     redis_mode: cluster
+    #     redis_max_memory: 32MB
   #==============================================================#
   # Global Parameters
   #==============================================================#
@@ -528,6 +575,8 @@ all:
       - postgresql-${pg_version}-pg-wait-sampling
       - postgresql-${pg_version}-pg-tle
       - postgresql-${pg_version}-pg-plan-filter
+      - postgresql-${pg_version}-partman
+      - postgresql-${pg_version}-citus
     pg_locale: C.UTF-8
     pg_lc_collate: C.UTF-8
     pg_lc_ctype: C.UTF-8
