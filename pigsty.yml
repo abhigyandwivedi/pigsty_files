@@ -147,8 +147,35 @@ all:
               createrole: true,
               pgbouncer: true,
             }
+          - { name: anon, login: false }
+          - { name: authenticated, login: false }
+          - { name: service_role, login: false, bypassrls: true }
+          - {
+              name: authenticator,
+              password: abhigyan,
+              pgbouncer: true,
+              inherit: false,
+              roles: [authenticated, anon, service_role],
+            }
         pg_databases:
           - { name: postgres, owner: supabase_admin }
+        pg_hba_rules:
+          - {
+              user: all,
+              db: all,
+              addr: 10.10.10.0/24,
+              auth: pwd,
+              title: "allow from coordinator nodes",
+              order: 500,
+            }
+          - {
+              user: all,
+              db: all,
+              addr: intra,
+              auth: pwd,
+              title: "intranet access",
+              order: 800,
+            }
 
     #----------------------------------------------#
     # PG-META : PostgreSQL Cluster with Supabase
@@ -182,10 +209,11 @@ all:
           - { name: authenticated, login: false }
           - {
               name: dashboard_user,
-              login: false,
+              login: true,
               replication: true,
               createdb: true,
               createrole: true,
+              password: abhigyan,
             }
           - { name: service_role, login: false, bypassrls: true }
           - {
@@ -304,12 +332,20 @@ all:
           # Supabase Analytics Database (Optional)
           - name: supabase
             owner: supabase_admin
-            comment: supabase analytics database
+            comment: supabase analytics database for Logflare and Vector
             schemas: [extensions, _analytics]
+            extensions:
+              # TimescaleDB - core requirement for Logflare time-series analytics
+              - { name: timescaledb, schema: extensions }
+              # Required for analytics data types and operations
+              - { name: uuid_ossp, schema: extensions }
+              - { name: pgcrypto, schema: extensions }
+              # Vector similarity for AI-powered log analysis (optional but useful)
+              - { name: vector, schema: extensions }
+              # Needed for Logflare's internal queuing
+              - { name: pgmq, schema: extensions }
         # Supabase Required Extensions and Libraries
-        pg_libs:
-          citus, timescaledb, pgsodium, plpgsql, plpgsql_check, pg_cron, pg_net, pg_stat_statements,
-          auto_explain, pg_wait_sampling, pg_tle, plan_filter, pg_partman_bgw
+        pg_libs: citus, pg_stat_statements, pg_cron, pg_net, pg_tle, pgsodium, timescaledb, plpgsql_check, auto_explain, pg_wait_sampling, plan_filter, pg_partman_bgw
         # Supabase Required PostgreSQL Parameters
         pg_parameters:
           cron.database_name: postgres
@@ -321,8 +357,18 @@ all:
           pg_partman_bgw.dbname: postgres
           pg_partman_bgw.interval: 3600 # run partition maintenance every hour
           pg_partman_bgw.role: supabase_admin
+          timescaledb.telemetry_level: off # disable TimescaleDB telemetry on analytics db
+
         # Supabase HBA Rules - Allow Docker Network Access
         pg_hba_rules:
+          - {
+              user: all,
+              db: all,
+              addr: 10.10.10.10/32,
+              auth: pwd,
+              title: "allow all from admin node",
+              order: 500,
+            }
           - {
               user: all,
               db: all,
@@ -361,7 +407,9 @@ all:
         pg_vip_interface: eth1 # <--- UPDATE interface name if needed
         pg_cluster: pg-meta
         pg_mode: citus
-        pg_shard: pg-meta
+        pg_shard: pg-shard # pg-meta is coordinator of the pg-shard worker group
+        pg_group: 0
+
     #----------------------------------------------#
     # PG-TEST : Example 3-Node PostgreSQL HA Cluster
     #----------------------------------------------#
